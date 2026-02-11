@@ -34,7 +34,7 @@ class PaymentController extends Controller
                 $order = Order::create([
                     'customer_name'   => $validated['name'],
                     'customer_email'  => $validated['email'],
-                    'amount'          => 100.00, // Precio fijo por ahora
+                    'amount'          => 30.00, // Precio fijo por ahora
                     'status'          => 'completed', // Simulamos éxito directo
                     'payment_gateway' => 'simulation',
                     'payment_id'      => 'SIM-' . Str::upper(Str::random(10)),
