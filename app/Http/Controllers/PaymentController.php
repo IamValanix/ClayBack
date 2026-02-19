@@ -16,6 +16,20 @@ use Stripe\Checkout\Session as StripeSession;
 
 class PaymentController extends Controller
 {
+    // 🌟 NUEVO: Método para consultar entradas disponibles desde el frontend
+    public function getAvailableTickets()
+    {
+        $totalTickets = 150;
+        $soldTickets = Ticket::count();
+        $available = max(0, $totalTickets - $soldTickets);
+
+        return response()->json([
+            'success'   => true,
+            'available' => $available,
+            'sold_out'  => $available === 0
+        ]);
+    }
+
     public function simulatePurchase(Request $request)
     {
         $validated = $request->validate([
@@ -26,12 +40,19 @@ class PaymentController extends Controller
             'email.email' => 'Proporciona un correo electrónico válido.'
         ]);
 
+        if (Ticket::count() >= 150) {
+            return response()->json([
+                'success' => false,
+                'error' => '¡Lo sentimos! Las entradas están completamente agotadas (150/150).'
+            ], 400);
+        }
+
         return DB::transaction(function () use ($validated) {
             try {
                 $order = Order::create([
                     'customer_name'   => $validated['name'],
                     'customer_email'  => $validated['email'],
-                    'amount'          => 30.00,
+                    'amount'          => 31.30,
                     'status'          => 'completed',
                     'payment_gateway' => 'simulation',
                     'payment_id'      => 'SIM-' . Str::upper(Str::random(10)),
@@ -81,9 +102,15 @@ class PaymentController extends Controller
             'email' => 'required|email:rfc,dns|max:255',
         ]);
 
+        if (Ticket::count() >= 150) {
+            return response()->json([
+                'success' => false,
+                'error' => '¡Lo sentimos! Las entradas están completamente agotadas (150/150).'
+            ], 400);
+        }
+
         Stripe::setApiKey(env('STRIPE_SECRET'));
 
-        // Buenas prácticas: Usar variables de entorno para las URLs
         $frontendUrl = env('FRONTEND_URL', 'http://localhost:5173');
 
         $session = StripeSession::create([
@@ -92,13 +119,13 @@ class PaymentController extends Controller
                 'price_data' => [
                     'currency'     => 'usd',
                     'product_data' => ['name' => 'Mada Mada ticket'],
-                    'unit_amount'  => 3000, // $30.00
+                    'unit_amount'  => 3130, // $31.30
                 ],
                 'quantity' => 1,
             ]],
             'mode'           => 'payment',
             'customer_email' => $validated['email'],
-            'success_url'    => $frontendUrl . '/?session_id={CHECKOUT_SESSION_ID}',
+            'success_url'    => $frontendUrl . '/?session_id={CHECKOUT_SESSION_ID}#payment-section',
             'cancel_url'     => $frontendUrl . '/#payment-section',
             'metadata'       => [
                 'customer_name' => $validated['name'],
@@ -130,7 +157,6 @@ class PaymentController extends Controller
 
             $paymentId = $session->payment_intent ?? $session->id;
 
-            // 🌟 FIX CRÍTICO: IDEMPOTENCIA (Evita duplicados si el usuario recarga la página)
             $existingOrder = Order::where('payment_id', $paymentId)->first();
 
             if ($existingOrder) {
@@ -150,7 +176,7 @@ class PaymentController extends Controller
                     $order = Order::create([
                         'customer_name'   => $name,
                         'customer_email'  => $email,
-                        'amount'          => 30.00,
+                        'amount'          => 31.30,
                         'status'          => 'completed',
                         'payment_gateway' => 'stripe',
                         'payment_id'      => $paymentId,

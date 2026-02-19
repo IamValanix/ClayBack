@@ -165,7 +165,7 @@
             <div class="header">
                 <table class="header-table">
                     <tr>
-                        <td class="header-title">MADA MADA</td>
+                        <td class="header-title">BIRTHDAY PARTY</td>
                         <td class="header-logo">
                             ENTRY TICKET<br>
                             <span style="color: #ffffff">#{{ $order->payment_id }}</span>
@@ -179,7 +179,8 @@
                     <tr>
                         <td class="layout-col-left">
                             <div class="label">Event</div>
-                            <div class="value value-large">Interstellar Journey 2026</div>
+                            <div class="value value-large">The Birthday Bash
+                                feat. Special Guest MADA MADA</div>
 
                             <table style="width: 100%; margin-top: 20px;">
                                 <tr>
