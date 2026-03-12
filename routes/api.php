@@ -3,7 +3,16 @@
 use App\Http\Controllers\PaymentController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('/simulate-payment', [PaymentController::class, 'simulatePurchase']);
-Route::post('/create-checkout-session', [PaymentController::class, 'createCheckoutSession']);
+// Agrupamos lo que necesita protección contra ataques de fuerza bruta o bots
+Route::middleware(['throttle:payments'])->group(function () {
+    Route::post('/create-checkout-session', [PaymentController::class, 'createCheckoutSession']);
+});
+
+// Rutas públicas normales
 Route::get('/stripe/success', [PaymentController::class, 'verifyStripeSuccess']);
+Route::post('/stripe/webhook', [PaymentController::class, 'handleWebhook']);
 Route::get('/tickets/available', [PaymentController::class, 'getAvailableTickets']);
+
+// PayPal routes (SIN duplicados)
+Route::post('/paypal/create-order', [PaymentController::class, 'createPaypalOrder']);
+Route::post('/paypal/capture-order', [PaymentController::class, 'capturePaypalOrder']);
