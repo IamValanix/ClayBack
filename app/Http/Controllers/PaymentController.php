@@ -334,7 +334,6 @@ class PaymentController extends Controller
     {
         $existingOrder = Order::where('payment_id', $paymentId)->first();
         if ($existingOrder) {
-            Log::info("Duplicate order prevented: {$paymentId}");
             $ticket = Ticket::where('order_id', $existingOrder->id)->first();
             return response()->json([
                 'success' => true,
@@ -374,10 +373,13 @@ class PaymentController extends Controller
                     'qr'     => $qrBase64
                 ])->setPaper('a4', 'portrait');
 
-                // --- AQUÍ ESTÁ EL CAMBIO ---
-                // Convertimos el PDF a base64 para evitar errores de codificación en la cola
+                // Preparamos datos planos para el Mailable
+                $orderData = $order->toArray();
+                $orderData['created_at_formatted'] = $order->created_at->format('d M, Y');
                 $pdfBase64 = base64_encode($pdf->output());
-                Mail::to($email)->send(new TicketPurchased($order, $pdfBase64));
+
+                // Usamos ->send() para evitar problemas de serialización en la tabla jobs
+                Mail::to($email)->send(new TicketPurchased($orderData, $ticketCode, $pdfBase64));
 
                 return response()->json([
                     'success'     => true,

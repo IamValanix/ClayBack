@@ -2,7 +2,6 @@
 
 namespace App\Mail;
 
-use App\Models\Order;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
@@ -14,27 +13,25 @@ class TicketPurchased extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public $order;
-    public $pdfBase64; // Renombrado para mayor claridad
+    public $orderData;
+    public $ticketCode;
+    public $pdfBase64;
 
-    public function __construct(Order $order, $pdfBase64)
+    public function __construct(array $orderData, $ticketCode, $pdfBase64)
     {
-        $this->order = $order;
+        $this->orderData = $orderData;
+        $this->ticketCode = $ticketCode;
         $this->pdfBase64 = $pdfBase64;
     }
 
     public function envelope(): Envelope
     {
-        return new Envelope(
-            subject: '¡Aquí tienes tu entrada! 🚀',
-        );
+        return new Envelope(subject: '¡Aquí tienes tu entrada! 🚀');
     }
 
     public function content(): Content
     {
-        return new Content(
-            view: 'emails.ticket',
-        );
+        return new Content(view: 'emails.ticket');
     }
 
     public function attachments(): array
