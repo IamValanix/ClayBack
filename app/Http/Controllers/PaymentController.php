@@ -330,7 +330,7 @@ class PaymentController extends Controller
     // CUMPLIMIENTO (FULFILLMENT)
     // -------------------------------------------------------------------------
 
-    private function fulfillOrder($name, $email, $gateway, $paymentId)
+    protected function fulfillOrder($name, $email, $gateway, $paymentId)
     {
         // 1. Verificar idempotencia (no duplicar si el usuario recarga)
         $existingOrder = Order::where('payment_id', $paymentId)->first();
@@ -398,7 +398,37 @@ class PaymentController extends Controller
     // -------------------------------------------------------------------------
     // WEBHOOKS
     // -------------------------------------------------------------------------
+    public function handlePaypalWebhook(Request $request)
+    {
+        $payload = $request->all();
 
+        if (($payload['event_type'] ?? '') === 'CHECKOUT.ORDER.APPROVED') {
+            $orderId = $payload['resource']['id'];
+
+            // 1. Obtener el token de autenticación
+            $token = $this->getPaypalToken();
+
+            // 2. Obtener detalles de la orden directamente desde PayPal
+            $response = HttpClientHelper::createPayPalClient($token)
+                ->get($this->getPaypalBaseUrl() . "/v2/checkout/orders/{$orderId}");
+
+            if ($response->successful()) {
+                $data = $response->json();
+
+                // 3. Extraer info del pagador
+                $payer = $data['payer'];
+                $email = $payer['email_address'];
+                $name = ($payer['name']['given_name'] ?? 'Guest') . ' ' . ($payer['name']['surname'] ?? '');
+
+                // 4. Llamar a la función de cumplimiento (como si fuera un pago normal)
+                $this->fulfillOrder($name, $email, 'paypal', $orderId);
+
+                Log::info("PayPal Webhook: Orden {$orderId} completada exitosamente.");
+            }
+        }
+
+        return response()->json(['status' => 'success']);
+    }
     public function handleWebhook(Request $request)
     {
         Stripe::setApiKey(env('STRIPE_SECRET'));

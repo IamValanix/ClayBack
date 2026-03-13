@@ -12,9 +12,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        // Excluimos la ruta del webhook de la verificación CSRF
+        // Excluimos las rutas de Webhooks de la verificación CSRF
+        // Esto permite que Stripe y PayPal nos envíen datos sin errores de seguridad.
         $middleware->validateCsrfTokens(except: [
             'api/stripe/webhook',
+            'api/paypal/webhook', // <--- Añadido para PayPal
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
