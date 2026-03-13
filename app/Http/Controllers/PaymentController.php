@@ -332,7 +332,6 @@ class PaymentController extends Controller
 
     protected function fulfillOrder($name, $email, $gateway, $paymentId)
     {
-        // 1. Verificar idempotencia (no duplicar si el usuario recarga)
         $existingOrder = Order::where('payment_id', $paymentId)->first();
         if ($existingOrder) {
             Log::info("Duplicate order prevented: {$paymentId}");
@@ -345,9 +344,7 @@ class PaymentController extends Controller
         }
 
         try {
-            // 2. Transacción atómica para evitar sobreventa
             return DB::transaction(function () use ($name, $email, $gateway, $paymentId) {
-
                 $currentCount = Ticket::count();
                 if ($currentCount >= $this->ticketLimit) {
                     throw new \Exception('Sold out during transaction');
@@ -363,8 +360,6 @@ class PaymentController extends Controller
                 ]);
 
                 $ticketCode = 'TKT-' . strtoupper(Str::random(6)) . '-' . date('Y');
-
-                // Generar QR
                 $qrData = QrCode::format('svg')->size(150)->margin(1)->generate($ticketCode);
                 $qrBase64 = base64_encode((string)$qrData);
 
@@ -373,15 +368,16 @@ class PaymentController extends Controller
                     'ticket_code' => $ticketCode,
                 ]);
 
-                // Generar PDF
                 $pdf = Pdf::loadView('pdfs.ticket', [
                     'order'  => $order,
                     'ticket' => $ticket,
                     'qr'     => $qrBase64
                 ])->setPaper('a4', 'portrait');
 
-                // Enviar Mail a la cola (Async)
-                Mail::to($email)->queue(new TicketPurchased($order, $pdf->output()));
+                // --- AQUÍ ESTÁ EL CAMBIO ---
+                // Convertimos el PDF a base64 para evitar errores de codificación en la cola
+                $pdfBase64 = base64_encode($pdf->output());
+                Mail::to($email)->queue(new TicketPurchased($order, $pdfBase64));
 
                 return response()->json([
                     'success'     => true,
