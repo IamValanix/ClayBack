@@ -1,0 +1,21 @@
+{
+  "php": {
+    "extensions": [
+      "gd",
+      "ctype",
+      "curl",
+      "dom",
+      "fileinfo",
+      "filter",
+      "hash",
+      "mbstring",
+      "openssl",
+      "pcre",
+      "pdo",
+      "session",
+      "tokenizer",
+      "xml",
+      "pdo_pgsql"
+    ]
+  }
+}
