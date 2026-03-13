@@ -377,7 +377,7 @@ class PaymentController extends Controller
                 // --- AQUÍ ESTÁ EL CAMBIO ---
                 // Convertimos el PDF a base64 para evitar errores de codificación en la cola
                 $pdfBase64 = base64_encode($pdf->output());
-                Mail::to($email)->queue(new TicketPurchased($order, $pdfBase64));
+                Mail::to($email)->send(new TicketPurchased($order, $pdfBase64));
 
                 return response()->json([
                     'success'     => true,
