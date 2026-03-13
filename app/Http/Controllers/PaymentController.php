@@ -381,7 +381,7 @@ class PaymentController extends Controller
                 ])->setPaper('a4', 'portrait');
 
                 // Enviar Mail a la cola (Async)
-                // Mail::to($email)->queue(new TicketPurchased($order, $pdf->output()));
+                Mail::to($email)->queue(new TicketPurchased($order, $pdf->output()));
 
                 return response()->json([
                     'success'     => true,
