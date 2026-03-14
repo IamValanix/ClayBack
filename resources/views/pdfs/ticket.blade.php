@@ -5,7 +5,6 @@
     <meta charset="utf-8">
     <title>Boarding Ticket</title>
     <style>
-        /* Reset para PDF */
         @page {
             margin: 0px;
         }
@@ -15,7 +14,6 @@
             margin: 0;
             padding: 0;
             background-color: #09090b;
-            /* Zinc 950 del front */
             color: #ffffff;
         }
 
@@ -25,25 +23,19 @@
             padding: 40px 20px;
         }
 
-        /* El Ticket con estilo Dark */
         .ticket-wrapper {
             background-color: #18181b;
-            /* Zinc 900 */
             border-radius: 20px;
             overflow: hidden;
             border: 1px solid #3f3f46;
-            /* Borde sutil */
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
         }
 
-        /* Encabezado con el Morado del checkout */
         .header {
             background-color: #111113;
-            /* Fondo más oscuro para contraste */
             color: #ffffff;
             padding: 25px 35px;
             border-bottom: 3px solid #a855f7;
-            /* Línea Morada Neón */
         }
 
         .header-table {
@@ -61,11 +53,9 @@
             text-align: right;
             font-size: 13px;
             color: #a855f7;
-            /* Texto morado */
             font-weight: bold;
         }
 
-        /* Cuerpo */
         .body-section {
             padding: 35px;
         }
@@ -86,16 +76,13 @@
             vertical-align: top;
             text-align: center;
             border-left: 1px dashed #3f3f46;
-            /* Línea de corte oscura */
             padding-left: 20px;
         }
 
-        /* Estilos de etiquetas y datos */
         .label {
             font-size: 10px;
             text-transform: uppercase;
             color: #a1a1aa;
-            /* Zinc 400 */
             margin-bottom: 4px;
             letter-spacing: 1px;
             font-weight: bold;
@@ -115,7 +102,6 @@
             padding-left: 10px;
         }
 
-        /* Caja del QR (Blanca para que el escáner no falle) */
         .qr-box {
             margin-top: 10px;
             padding: 15px;
@@ -130,11 +116,9 @@
             font-size: 15px;
             font-weight: bold;
             color: #a855f7;
-            /* Código en morado */
             letter-spacing: 2px;
         }
 
-        /* Footer */
         .footer {
             background-color: #111113;
             padding: 20px 30px;
@@ -144,7 +128,6 @@
             border-top: 1px solid #27272a;
         }
 
-        /* Badge de Status */
         .badge {
             background-color: rgba(34, 197, 94, 0.1);
             color: #4ade80;
@@ -168,7 +151,7 @@
                         <td class="header-title">BIRTHDAY PARTY</td>
                         <td class="header-logo">
                             ENTRY TICKET<br>
-                            <span style="color: #ffffff">#{{ $order->payment_id }}</span>
+                            <span style="color: #ffffff">#{{ $order['payment_id'] }}</span>
                         </td>
                     </tr>
                 </table>
@@ -179,24 +162,23 @@
                     <tr>
                         <td class="layout-col-left">
                             <div class="label">Event</div>
-                            <div class="value value-large">The Birthday Bash
-                                feat. Special Guest MADA MADA</div>
+                            <div class="value value-large">The Birthday Bash feat. Special Guest MADA MADA</div>
 
                             <table style="width: 100%; margin-top: 20px;">
                                 <tr>
                                     <td>
                                         <div class="label">Passenger</div>
-                                        <div class="value">{{ $order->customer_name }}</div>
+                                        <div class="value">{{ $order['customer_name'] }}</div>
                                     </td>
                                     <td>
                                         <div class="label">Purchase Date</div>
-                                        <div class="value">{{ $order->created_at->format('d M, Y') }}</div>
+                                        <div class="value">{{ \Carbon\Carbon::parse($order['created_at'])->format('d M, Y') }}</div>
                                     </td>
                                 </tr>
                                 <tr>
                                     <td>
                                         <div class="label">Contact Email</div>
-                                        <div class="value">{{ $order->customer_email }}</div>
+                                        <div class="value">{{ $order['customer_email'] }}</div>
                                     </td>
                                     <td>
                                         <div class="label">Status</div>
@@ -208,19 +190,17 @@
                             <div style="margin-top: 25px; border-top: 1px solid #27272a; padding-top: 20px;">
                                 <div class="label">Total Paid</div>
                                 <div class="value" style="font-size: 24px; color: #4ade80;">
-                                    ${{ number_format($order->amount, 2) }} USD
+                                    ${{ number_format($order['amount'], 2) }} USD
                                 </div>
                             </div>
                         </td>
 
                         <td class="layout-col-right">
                             <div class="label">Scan at Entry</div>
-
                             <div class="qr-box">
                                 <img src="data:image/svg+xml;base64, {{ $qr }}" width="130" height="130">
                             </div>
-
-                            <div class="ticket-code">{{ $ticket->ticket_code }}</div>
+                            <div class="ticket-code">{{ $ticket['ticket_code'] }}</div>
                             <div style="font-size: 9px; color: #71717a; margin-top: 8px;">Valid for one person</div>
                         </td>
                     </tr>

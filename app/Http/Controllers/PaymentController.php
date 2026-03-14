@@ -332,8 +332,11 @@ class PaymentController extends Controller
 
     protected function fulfillOrder($name, $email, $gateway, $paymentId)
     {
+        Log::info("Iniciando fulfillOrder para: {$paymentId}");
+
         $existingOrder = Order::where('payment_id', $paymentId)->first();
         if ($existingOrder) {
+            Log::info("Orden ya procesada: {$paymentId}");
             $ticket = Ticket::where('order_id', $existingOrder->id)->first();
             return response()->json([
                 'success' => true,
@@ -345,8 +348,11 @@ class PaymentController extends Controller
         try {
             // 1. Procesamos la DB de forma atómica
             $orderData = DB::transaction(function () use ($name, $email, $gateway, $paymentId) {
+                Log::info("Ejecutando transacción DB...");
+
                 $currentCount = Ticket::count();
                 if ($currentCount >= $this->ticketLimit) {
+                    Log::warning("Límite de tickets alcanzado");
                     throw new \Exception('Sold out during transaction');
                 }
 
@@ -365,26 +371,28 @@ class PaymentController extends Controller
                     'ticket_code' => $ticketCode,
                 ]);
 
-                // Retornamos el array de la orden y el código para continuar fuera de la transacción
+                Log::info("Orden creada ID: {$order->id}");
                 return [
                     'order' => $order->toArray(),
                     'ticket_code' => $ticketCode
                 ];
             });
 
-            // 2. Tareas pesadas (PDF + QR) FUERA de la transacción
+            // 2. Tareas pesadas
+            Log::info("Generando QR y PDF...");
             $qrData = QrCode::format('svg')->size(150)->margin(1)->generate($orderData['ticket_code']);
             $qrBase64 = base64_encode((string)$qrData);
 
             $pdf = Pdf::loadView('pdfs.ticket', [
-                'order'  => (object)$orderData['order'], // Convertimos de vuelta a objeto para la vista
+                'order'  => (object)$orderData['order'],
                 'ticket' => (object)['ticket_code' => $orderData['ticket_code']],
                 'qr'     => $qrBase64
             ])->setPaper('a4', 'portrait');
 
             $pdfBase64 = base64_encode($pdf->output());
 
-            // 3. ENVIAMOS EL TRABAJO A LA COLA (No bloquea la respuesta)
+            // 3. ENVIAMOS EL TRABAJO A LA COLA
+            Log::info("Despachando Job de correo para: {$email}");
             \App\Jobs\SendTicketEmail::dispatch($orderData['order'], $orderData['ticket_code'], $pdfBase64, $email);
 
             return response()->json([
@@ -393,11 +401,17 @@ class PaymentController extends Controller
                 'ticket_code' => $orderData['ticket_code'],
             ]);
         } catch (\Exception $e) {
-            Log::error("Fulfillment Error: " . $e->getMessage());
-            return response()->json(['success' => false, 'error' => 'Processing failed'], 500);
+            // AQUÍ VEREMOS EL ERROR REAL EN LOS LOGS DE RAILWAY
+            Log::error("=== ERROR CRÍTICO EN FULFILLORDER ===");
+            Log::error("Mensaje: " . $e->getMessage());
+            Log::error("Traza: " . $e->getTraceAsString());
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Processing failed: ' . $e->getMessage()
+            ], 500);
         }
     }
-
     // -------------------------------------------------------------------------
     // WEBHOOKS
     // -------------------------------------------------------------------------
