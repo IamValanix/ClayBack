@@ -383,11 +383,13 @@ class PaymentController extends Controller
             $qrData = QrCode::format('svg')->size(150)->margin(1)->generate($orderData['ticket_code']);
             $qrBase64 = base64_encode((string)$qrData);
 
+            // En lugar de convertir a objeto, pasa los modelos directamente
             $pdf = Pdf::loadView('pdfs.ticket', [
-                'order'  => (object)$orderData['order'],
-                'ticket' => (object)['ticket_code' => $orderData['ticket_code']],
-                'qr'     => $qrBase64
-            ])->setPaper('a4', 'portrait');
+                'order'  => $orderData['order'], // Esto ya es un modelo Eloquent (objeto)
+                'ticket' => (object)['ticket_code' => $orderData['ticket_code']], // Mantenemos como objeto
+                'qr'     => $qrBase64,
+                'ticketCode' => $orderData['ticket_code'] // Variable adicional por si acaso
+            ]);
 
             $pdfBase64 = base64_encode($pdf->output());
 

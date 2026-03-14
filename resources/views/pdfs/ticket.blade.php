@@ -151,7 +151,7 @@
                         <td class="header-title">BIRTHDAY PARTY</td>
                         <td class="header-logo">
                             ENTRY TICKET<br>
-                            <span style="color: #ffffff">#{{ $order['payment_id'] }}</span>
+                            <span style="color: #ffffff">#{{ $order->payment_id ?? 'N/A' }}</span>
                         </td>
                     </tr>
                 </table>
@@ -168,17 +168,23 @@
                                 <tr>
                                     <td>
                                         <div class="label">Passenger</div>
-                                        <div class="value">{{ $order['customer_name'] }}</div>
+                                        <div class="value">{{ $order->customer_name ?? 'N/A' }}</div>
                                     </td>
                                     <td>
                                         <div class="label">Purchase Date</div>
-                                        <div class="value">{{ \Carbon\Carbon::parse($order['created_at'])->format('d M, Y') }}</div>
+                                        <div class="value">
+                                            @if(isset($order->created_at))
+                                            {{ \Carbon\Carbon::parse($order->created_at)->format('d M, Y') }}
+                                            @else
+                                            {{ date('d M, Y') }}
+                                            @endif
+                                        </div>
                                     </td>
                                 </tr>
                                 <tr>
                                     <td>
                                         <div class="label">Contact Email</div>
-                                        <div class="value">{{ $order['customer_email'] }}</div>
+                                        <div class="value">{{ $order->customer_email ?? 'N/A' }}</div>
                                     </td>
                                     <td>
                                         <div class="label">Status</div>
@@ -190,7 +196,7 @@
                             <div style="margin-top: 25px; border-top: 1px solid #27272a; padding-top: 20px;">
                                 <div class="label">Total Paid</div>
                                 <div class="value" style="font-size: 24px; color: #4ade80;">
-                                    ${{ number_format($order['amount'], 2) }} USD
+                                    ${{ number_format($order->amount ?? 0, 2) }} USD
                                 </div>
                             </div>
                         </td>
@@ -198,9 +204,13 @@
                         <td class="layout-col-right">
                             <div class="label">Scan at Entry</div>
                             <div class="qr-box">
-                                <img src="data:image/svg+xml;base64, {{ $qr }}" width="130" height="130">
+                                @if(isset($qr) && $qr)
+                                <img src="data:image/svg+xml;base64, {{ $qr }}" width="130" height="130" alt="QR Code">
+                                @else
+                                <div style="width:130px; height:130px; background:#f0f0f0; display:flex; align-items:center; justify-content:center; color:#333; font-size:12px;">QR No Disponible</div>
+                                @endif
                             </div>
-                            <div class="ticket-code">{{ $ticket['ticket_code'] }}</div>
+                            <div class="ticket-code">{{ $ticket->ticket_code ?? $ticketCode ?? 'N/A' }}</div>
                             <div style="font-size: 9px; color: #71717a; margin-top: 8px;">Valid for one person</div>
                         </td>
                     </tr>
