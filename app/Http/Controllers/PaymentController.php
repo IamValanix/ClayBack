@@ -343,7 +343,8 @@ class PaymentController extends Controller
         }
 
         try {
-            return DB::transaction(function () use ($name, $email, $gateway, $paymentId) {
+            // 1. Procesamos la DB de forma atómica
+            $orderData = DB::transaction(function () use ($name, $email, $gateway, $paymentId) {
                 $currentCount = Ticket::count();
                 if ($currentCount >= $this->ticketLimit) {
                     throw new \Exception('Sold out during transaction');
@@ -359,34 +360,38 @@ class PaymentController extends Controller
                 ]);
 
                 $ticketCode = 'TKT-' . strtoupper(Str::random(6)) . '-' . date('Y');
-                $qrData = QrCode::format('svg')->size(150)->margin(1)->generate($ticketCode);
-                $qrBase64 = base64_encode((string)$qrData);
-
                 $ticket = Ticket::create([
                     'order_id'    => $order->id,
                     'ticket_code' => $ticketCode,
                 ]);
 
-                $pdf = Pdf::loadView('pdfs.ticket', [
-                    'order'  => $order,
-                    'ticket' => $ticket,
-                    'qr'     => $qrBase64
-                ])->setPaper('a4', 'portrait');
-
-                // Preparamos datos planos para el Mailable
-                $orderData = $order->toArray();
-                $orderData['created_at_formatted'] = $order->created_at->format('d M, Y');
-                $pdfBase64 = base64_encode($pdf->output());
-
-                // Usamos ->send() para evitar problemas de serialización en la tabla jobs
-                Mail::to($email)->send(new TicketPurchased($orderData, $ticketCode, $pdfBase64));
-
-                return response()->json([
-                    'success'     => true,
-                    'message'     => 'Success! Ticket sent to email.',
-                    'ticket_code' => $ticketCode,
-                ]);
+                // Retornamos el array de la orden y el código para continuar fuera de la transacción
+                return [
+                    'order' => $order->toArray(),
+                    'ticket_code' => $ticketCode
+                ];
             });
+
+            // 2. Tareas pesadas (PDF + QR) FUERA de la transacción
+            $qrData = QrCode::format('svg')->size(150)->margin(1)->generate($orderData['ticket_code']);
+            $qrBase64 = base64_encode((string)$qrData);
+
+            $pdf = Pdf::loadView('pdfs.ticket', [
+                'order'  => (object)$orderData['order'], // Convertimos de vuelta a objeto para la vista
+                'ticket' => (object)['ticket_code' => $orderData['ticket_code']],
+                'qr'     => $qrBase64
+            ])->setPaper('a4', 'portrait');
+
+            $pdfBase64 = base64_encode($pdf->output());
+
+            // 3. ENVIAMOS EL TRABAJO A LA COLA (No bloquea la respuesta)
+            \App\Jobs\SendTicketEmail::dispatch($orderData['order'], $orderData['ticket_code'], $pdfBase64, $email);
+
+            return response()->json([
+                'success'     => true,
+                'message'     => 'Success! Ticket will be sent to your email.',
+                'ticket_code' => $orderData['ticket_code'],
+            ]);
         } catch (\Exception $e) {
             Log::error("Fulfillment Error: " . $e->getMessage());
             return response()->json(['success' => false, 'error' => 'Processing failed'], 500);
