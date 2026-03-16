@@ -16,7 +16,8 @@ class SendTicketEmail implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public $orderData, $ticketCode, $pdfBase64, $email;
-    public $timeout = 120; // Aumentar timeout a 120 segundos
+    public $timeout = 120;
+    public $tries = 3;
 
     public function __construct($orderData, $ticketCode, $pdfBase64, $email)
     {
@@ -29,18 +30,29 @@ class SendTicketEmail implements ShouldQueue
     public function handle()
     {
         try {
-            Log::info("Intentando enviar correo SIMPLE a: {$this->email}");
+            Log::info("Intentando enviar correo a: {$this->email} via Mailtrap API");
 
-            // Enviar solo texto primero para probar
-            Mail::raw("¡Gracias por tu compra! Tu código de ticket es: {$this->ticketCode}", function ($message) {
-                $message->to($this->email)
-                    ->subject('¡Ticket confirmado!');
-            });
+            // Usar el mailable existente
+            Mail::to($this->email)->send(
+                new TicketPurchased($this->orderData, $this->ticketCode, $this->pdfBase64)
+            );
 
-            Log::info("Correo SIMPLE enviado exitosamente a: {$this->email}");
+            Log::info("Correo enviado exitosamente a: {$this->email}");
         } catch (\Exception $e) {
-            Log::error("Error enviando correo simple: " . $e->getMessage());
-            throw $e;
+            Log::error("Error enviando correo: " . $e->getMessage());
+
+            // Reintentar si es necesario
+            if ($this->attempts() < $this->tries) {
+                $this->release(30); // Reintentar en 30 segundos
+            } else {
+                throw $e;
+            }
         }
+    }
+
+    public function failed(\Exception $e)
+    {
+        Log::error("Job de correo falló definitivamente para: {$this->email}");
+        Log::error("Error final: " . $e->getMessage());
     }
 }

@@ -4,18 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Models\Ticket;
-use App\Mail\TicketPurchased;
-use App\Helpers\HttpClientHelper; // 👈 Importar el helper
+use App\Helpers\HttpClientHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Http;
 use SimpleSoftwareIO\QrCode\Facades\QrCode;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Stripe\Stripe;
 use Stripe\Checkout\Session as StripeSession;
+use Carbon\Carbon;
 
 class PaymentController extends Controller
 {
@@ -24,12 +22,13 @@ class PaymentController extends Controller
 
     public function __construct()
     {
+        // Configuración de límites y precios
         $this->ticketLimit = config('payment.ticket_limit', 150);
         $this->ticketPrice = config('payment.ticket_price', 31.30);
     }
 
     /**
-     * Consulta de tickets disponibles directamente de la DB
+     * Consulta de tickets disponibles
      */
     public function getAvailableTickets()
     {
@@ -50,8 +49,8 @@ class PaymentController extends Controller
     public function createCheckoutSession(Request $request)
     {
         $validated = $request->validate([
-            'name'  => 'required|string|max:255|regex:/^[a-zA-Z\s]+$/',
-            'email' => 'required|email:rfc,dns|max:255',
+            'name'  => 'required|string|max:255',
+            'email' => 'required|email|max:255',
         ]);
 
         if (Ticket::count() >= $this->ticketLimit) {
@@ -81,7 +80,7 @@ class PaymentController extends Controller
             return response()->json(['success' => true, 'url' => $session->url]);
         } catch (\Exception $e) {
             Log::error("Stripe Session Error: " . $e->getMessage());
-            return response()->json(['success' => false, 'error' => 'Payment service unavailable'], 500);
+            return response()->json(['success' => false, 'error' => 'Stripe error'], 500);
         }
     }
 
@@ -111,250 +110,83 @@ class PaymentController extends Controller
     }
 
     // -------------------------------------------------------------------------
-    // PAYPAL LOGIC - VERSIÓN CON SSL INTELIGENTE
+    // PAYPAL LOGIC
     // -------------------------------------------------------------------------
 
     private function getPaypalBaseUrl()
     {
-        return env('PAYPAL_MODE') === 'live'
-            ? 'https://api-m.paypal.com'
-            : 'https://api-m.sandbox.paypal.com';
+        return env('PAYPAL_MODE') === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
     }
 
-    /**
-     * Obtiene token de acceso de PayPal con configuración SSL adaptativa
-     */
     private function getPaypalToken()
     {
         try {
-            Log::info('PayPal: Intentando obtener token', [
-                'mode' => env('PAYPAL_MODE'),
-                'client_id' => substr(env('PAYPAL_CLIENT_ID'), 0, 10) . '...',
-                'url' => $this->getPaypalBaseUrl() . "/v1/oauth2/token",
-                'environment' => app()->environment(),
-                'verify_ssl' => env('HTTP_VERIFY_SSL', true)
-            ]);
-
-            // Usar el helper para crear el cliente con SSL configurado
             $response = HttpClientHelper::createClient()
                 ->withBasicAuth(env('PAYPAL_CLIENT_ID'), env('PAYPAL_SECRET'))
                 ->asForm()
-                ->timeout(30)
-                ->post($this->getPaypalBaseUrl() . "/v1/oauth2/token", [
-                    'grant_type' => 'client_credentials'
-                ]);
+                ->post($this->getPaypalBaseUrl() . "/v1/oauth2/token", ['grant_type' => 'client_credentials']);
 
-            if ($response->failed()) {
-                Log::error('PayPal token error response', [
-                    'status' => $response->status(),
-                    'body' => $response->body()
-                ]);
-                return null;
-            }
-
-            $data = $response->json();
-
-            if (!isset($data['access_token'])) {
-                Log::error('PayPal: No access_token en respuesta', ['data' => $data]);
-                return null;
-            }
-
-            Log::info('PayPal token obtenido exitosamente');
-            return $data['access_token'];
+            return $response->json()['access_token'] ?? null;
         } catch (\Exception $e) {
-            Log::error('PayPal token exception', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
+            Log::error("PayPal Token Error: " . $e->getMessage());
             return null;
         }
     }
 
-    /**
-     * Crea una orden en PayPal
-     */
     public function createPaypalOrder(Request $request)
     {
-        $request->validate([
-            'name'  => 'required|string|max:255',
-            'email' => 'required|email'
-        ]);
+        $token = $this->getPaypalToken();
+        if (!$token) return response()->json(['success' => false, 'error' => 'PayPal Auth Failed'], 500);
 
-        if (Ticket::count() >= $this->ticketLimit) {
-            return response()->json([
-                'success' => false,
-                'error' => 'Sold out!'
-            ], 400);
-        }
-
-        try {
-            $token = $this->getPaypalToken();
-
-            if (!$token) {
-                Log::error('PayPal: No se pudo obtener token de autenticación');
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Could not authenticate with PayPal. Please check server configuration.'
-                ], 500);
-            }
-
-            // Usar el helper para crear el cliente con SSL configurado
-            $response = HttpClientHelper::createPayPalClient($token)
-                ->withHeaders([
-                    'Content-Type' => 'application/json',
-                    'Prefer' => 'return=representation'
-                ])
-                ->timeout(30)
-                ->post($this->getPaypalBaseUrl() . "/v2/checkout/orders", [
-                    'intent' => 'CAPTURE',
-                    'purchase_units' => [[
-                        'amount' => [
-                            'currency_code' => 'USD',
-                            'value' => number_format($this->ticketPrice, 2, '.', '')
-                        ],
-                        'description' => 'Mada Mada Event Ticket'
-                    ]],
-                    'application_context' => [
-                        'brand_name' => 'Mada Mada Events',
-                        'landing_page' => 'BILLING',
-                        'shipping_preference' => 'NO_SHIPPING',
-                        'user_action' => 'PAY_NOW',
-                        'return_url' => env('FRONTEND_URL') . '/?payment=success',
-                        'cancel_url' => env('FRONTEND_URL') . '/?payment=cancel'
+        $response = HttpClientHelper::createPayPalClient($token)
+            ->post($this->getPaypalBaseUrl() . "/v2/checkout/orders", [
+                'intent' => 'CAPTURE',
+                'purchase_units' => [[
+                    'amount' => [
+                        'currency_code' => 'USD',
+                        'value' => number_format($this->ticketPrice, 2, '.', '')
                     ]
-                ]);
-
-            if ($response->failed()) {
-                Log::error('PayPal create order error: ' . $response->body());
-                return response()->json([
-                    'success' => false,
-                    'error' => 'PayPal order creation failed: ' . $response->status()
-                ], 500);
-            }
-
-            $data = $response->json();
-
-            if (!isset($data['id'])) {
-                Log::error('PayPal: No order ID in response', ['response' => $data]);
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Invalid PayPal response'
-                ], 500);
-            }
-
-            return response()->json([
-                'success' => true,
-                'orderID' => $data['id']
+                ]]
             ]);
-        } catch (\Exception $e) {
-            Log::error("PayPal Create Error: " . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'error' => 'PayPal service temporarily unavailable: ' . $e->getMessage()
-            ], 500);
-        }
+
+        return response()->json(['success' => true, 'orderID' => $response->json()['id']]);
     }
 
-    /**
-     * Captura (completa) una orden de PayPal
-     */
     public function capturePaypalOrder(Request $request)
     {
-        $validated = $request->validate([
-            'orderID' => 'required|string',
-            'email'   => 'sometimes|email',
-            'name'    => 'sometimes|string'
-        ]);
+        $token = $this->getPaypalToken();
+        $orderID = $request->input('orderID');
 
-        try {
-            $token = $this->getPaypalToken();
+        $response = HttpClientHelper::createPayPalClient($token)
+            ->post($this->getPaypalBaseUrl() . "/v2/checkout/orders/{$orderID}/capture");
 
-            if (!$token) {
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Authentication failed'
-                ], 500);
-            }
+        $data = $response->json();
 
-            // Usar el helper para crear el cliente con SSL configurado
-            $response = HttpClientHelper::createPayPalClient($token)
-                ->withHeaders(['Content-Type' => 'application/json'])
-                ->timeout(30)
-                ->post($this->getPaypalBaseUrl() . "/v2/checkout/orders/{$validated['orderID']}/capture");
-
-            if ($response->failed()) {
-                Log::error('PayPal capture error: ' . $response->body());
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Payment capture failed'
-                ], 400);
-            }
-
-            $data = $response->json();
-
-            if (($data['status'] ?? '') === 'COMPLETED') {
-                // Obtener email de PayPal o del request
-                $email = $data['payer']['email_address'] ?? $validated['email'] ?? null;
-
-                if (!$email) {
-                    Log::error('PayPal: No email in response');
-                    return response()->json([
-                        'success' => false,
-                        'error' => 'Could not retrieve payer email'
-                    ], 400);
-                }
-
-                // Obtener nombre
-                $givenName = $data['payer']['name']['given_name'] ?? $request->input('name', 'Customer');
-                $surname = $data['payer']['name']['surname'] ?? '';
-                $name = trim("$givenName $surname");
-                $name = preg_replace('/[^a-zA-Z\s]/', '', $name) ?: 'Customer';
-
-                return $this->fulfillOrder($name, $email, 'paypal', $data['id']);
-            }
-
-            return response()->json([
-                'success' => false,
-                'error' => 'Payment not completed'
-            ], 400);
-        } catch (\Exception $e) {
-            Log::error("PayPal Capture Error: " . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'error' => 'Payment processing failed'
-            ], 500);
+        if (($data['status'] ?? '') === 'COMPLETED') {
+            $email = $data['payer']['email_address'];
+            $name = ($data['payer']['name']['given_name'] ?? 'Guest') . ' ' . ($data['payer']['name']['surname'] ?? '');
+            return $this->fulfillOrder($name, $email, 'paypal', $data['id']);
         }
+
+        return response()->json(['success' => false, 'error' => 'PayPal capture failed'], 400);
     }
 
     // -------------------------------------------------------------------------
-    // CUMPLIMIENTO (FULFILLMENT)
+    // FULFILLMENT & DOWNLOAD
     // -------------------------------------------------------------------------
 
     protected function fulfillOrder($name, $email, $gateway, $paymentId)
     {
-        Log::info("Iniciando fulfillOrder para: {$paymentId}");
-
-        $existingOrder = Order::where('payment_id', $paymentId)->first();
-        if ($existingOrder) {
-            Log::info("Orden ya procesada: {$paymentId}");
-            $ticket = Ticket::where('order_id', $existingOrder->id)->first();
-            return response()->json([
-                'success' => true,
-                'message' => 'Ticket already processed.',
-                'ticket_code' => $ticket->ticket_code ?? null
-            ]);
-        }
-
         try {
-            // 1. Procesamos la DB de forma atómica
             $orderData = DB::transaction(function () use ($name, $email, $gateway, $paymentId) {
-                Log::info("Ejecutando transacción DB...");
-
-                $currentCount = Ticket::count();
-                if ($currentCount >= $this->ticketLimit) {
-                    Log::warning("Límite de tickets alcanzado");
-                    throw new \Exception('Sold out during transaction');
+                // Verificar si ya existe para evitar duplicados
+                $existingOrder = Order::where('payment_id', $paymentId)->first();
+                if ($existingOrder) {
+                    $tkt = Ticket::where('order_id', $existingOrder->id)->first();
+                    return ['order' => $existingOrder, 'ticket' => $tkt];
                 }
+
+                if (Ticket::count() >= $this->ticketLimit) throw new \Exception('Sold out');
 
                 $order = Order::create([
                     'customer_name'   => $name,
@@ -365,109 +197,48 @@ class PaymentController extends Controller
                     'payment_id'      => $paymentId,
                 ]);
 
-                $ticketCode = 'TKT-' . strtoupper(Str::random(6)) . '-' . date('Y');
                 $ticket = Ticket::create([
                     'order_id'    => $order->id,
-                    'ticket_code' => $ticketCode,
+                    'ticket_code' => 'TKT-' . strtoupper(Str::random(6)) . '-' . date('Y'),
                 ]);
 
-                Log::info("Orden creada ID: {$order->id}");
-                return [
-                    'order' => $order->toArray(),
-                    'ticket_code' => $ticketCode
-                ];
+                return ['order' => $order, 'ticket' => $ticket];
             });
-
-            // 2. Tareas pesadas
-            Log::info("Generando QR y PDF...");
-            $qrData = QrCode::format('svg')->size(150)->margin(1)->generate($orderData['ticket_code']);
-            $qrBase64 = base64_encode((string)$qrData);
-
-            // En lugar de convertir a objeto, pasa los modelos directamente
-            $pdf = Pdf::loadView('pdfs.ticket', [
-                'order'  => $orderData['order'], // Esto ya es un modelo Eloquent (objeto)
-                'ticket' => (object)['ticket_code' => $orderData['ticket_code']], // Mantenemos como objeto
-                'qr'     => $qrBase64,
-                'ticketCode' => $orderData['ticket_code'] // Variable adicional por si acaso
-            ]);
-
-            $pdfBase64 = base64_encode($pdf->output());
-
-            // 3. ENVIAMOS EL TRABAJO A LA COLA
-            Log::info("Despachando Job de correo para: {$email}");
-            \App\Jobs\SendTicketEmail::dispatch($orderData['order'], $orderData['ticket_code'], $pdfBase64, $email);
 
             return response()->json([
                 'success'     => true,
-                'message'     => 'Success! Ticket will be sent to your email.',
-                'ticket_code' => $orderData['ticket_code'],
+                'ticket_code' => $orderData['ticket']->ticket_code,
+                'download_url' => route('download.ticket', ['code' => $orderData['ticket']->ticket_code])
             ]);
         } catch (\Exception $e) {
-            // AQUÍ VEREMOS EL ERROR REAL EN LOS LOGS DE RAILWAY
-            Log::error("=== ERROR CRÍTICO EN FULFILLORDER ===");
-            Log::error("Mensaje: " . $e->getMessage());
-            Log::error("Traza: " . $e->getTraceAsString());
-
-            return response()->json([
-                'success' => false,
-                'error' => 'Processing failed: ' . $e->getMessage()
-            ], 500);
+            Log::error("Fulfillment Error: " . $e->getMessage());
+            return response()->json(['success' => false, 'error' => 'Processing failed'], 500);
         }
     }
-    // -------------------------------------------------------------------------
-    // WEBHOOKS
-    // -------------------------------------------------------------------------
-    public function handlePaypalWebhook(Request $request)
+
+    /**
+     * Genera y descarga el PDF del ticket
+     */
+    public function downloadTicket(Request $request)
     {
-        $payload = $request->all();
+        $ticket = Ticket::where('ticket_code', $request->query('code'))->firstOrFail();
+        $order = Order::findOrFail($ticket->order_id);
 
-        if (($payload['event_type'] ?? '') === 'CHECKOUT.ORDER.APPROVED') {
-            $orderId = $payload['resource']['id'];
+        // Generar QR en Base64
+        $qrData = QrCode::format('svg')->size(150)->margin(1)->generate($ticket->ticket_code);
+        $qrBase64 = base64_encode((string)$qrData);
 
-            // 1. Obtener el token de autenticación
-            $token = $this->getPaypalToken();
+        // Cargar vista del PDF
+        $pdf = Pdf::loadView('pdfs.ticket', [
+            'order'      => $order,
+            'ticket'     => $ticket,
+            'qr'         => $qrBase64,
+            'ticketCode' => $ticket->ticket_code
+        ]);
 
-            // 2. Obtener detalles de la orden directamente desde PayPal
-            $response = HttpClientHelper::createPayPalClient($token)
-                ->get($this->getPaypalBaseUrl() . "/v2/checkout/orders/{$orderId}");
+        // Configurar papel (opcional, por defecto es A4)
+        $pdf->setPaper('a4', 'portrait');
 
-            if ($response->successful()) {
-                $data = $response->json();
-
-                // 3. Extraer info del pagador
-                $payer = $data['payer'];
-                $email = $payer['email_address'];
-                $name = ($payer['name']['given_name'] ?? 'Guest') . ' ' . ($payer['name']['surname'] ?? '');
-
-                // 4. Llamar a la función de cumplimiento (como si fuera un pago normal)
-                $this->fulfillOrder($name, $email, 'paypal', $orderId);
-
-                Log::info("PayPal Webhook: Orden {$orderId} completada exitosamente.");
-            }
-        }
-
-        return response()->json(['status' => 'success']);
-    }
-    public function handleWebhook(Request $request)
-    {
-        Stripe::setApiKey(env('STRIPE_SECRET'));
-        $sig_header = $request->header('Stripe-Signature');
-
-        try {
-            $event = \Stripe\Webhook::constructEvent($request->getContent(), $sig_header, env('STRIPE_WEBHOOK_SECRET'));
-            if ($event->type === 'checkout.session.completed') {
-                $session = $event->data->object;
-                $this->fulfillOrder(
-                    $session->metadata->customer_name ?? 'Guest',
-                    $session->customer_email,
-                    'stripe',
-                    $session->payment_intent ?? $session->id
-                );
-            }
-            return response()->json(['status' => 'success']);
-        } catch (\Exception $e) {
-            Log::error("Stripe Webhook Error: " . $e->getMessage());
-            return response()->json(['error' => 'Webhook failed'], 400);
-        }
+        return $pdf->download("Ticket-{$ticket->ticket_code}.pdf");
     }
 }
