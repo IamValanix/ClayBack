@@ -10,7 +10,7 @@
         }
 
         body {
-            font-family: 'Helvetica', sans-serif;
+            font-family: 'Helvetica', 'Arial', sans-serif;
             margin: 0;
             padding: 0;
             background-color: #09090b;
@@ -19,12 +19,15 @@
 
         .page-container {
             padding: 40px 20px;
+            max-width: 800px;
+            margin: 0 auto;
         }
 
         .ticket-wrapper {
             background-color: #18181b;
             border-radius: 20px;
             border: 1px solid #3f3f46;
+            overflow: hidden;
         }
 
         .header {
@@ -35,12 +38,20 @@
 
         .header-table {
             width: 100%;
+            border-collapse: collapse;
         }
 
         .header-title {
             font-size: 26px;
             font-weight: bold;
-            letter-spacing: 3px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        /* Clase específica para el ID en morado */
+        .ticket-id-brand {
+            color: #a855f7;
+            margin-right: 10px;
         }
 
         .header-logo {
@@ -56,6 +67,7 @@
 
         .layout-table {
             width: 100%;
+            border-collapse: collapse;
         }
 
         .layout-col-left {
@@ -120,11 +132,13 @@
         }
 
         .badge {
-            background-color: #22c55e;
-            color: #ffffff;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 10px;
+            background-color: rgba(34, 197, 94, 0.1);
+            color: #4ade80;
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: bold;
+            border: 1px solid rgba(34, 197, 94, 0.2);
         }
     </style>
 </head>
@@ -135,10 +149,12 @@
             <div class="header">
                 <table class="header-table">
                     <tr>
-                        <td class="header-title">BIRTHDAY PARTY</td>
+                        <td class="header-title">
+                            <span class="ticket-id-brand">#{{ $ticket->id }}</span> Emmanuel Birthday Party
+                        </td>
                         <td class="header-logo">
                             ENTRY TICKET<br>
-                            <span style="color: #ffffff">#{{ $order->payment_id }}</span>
+                            <span style="color: #ffffff">REF: {{ $order->payment_id }}</span>
                         </td>
                     </tr>
                 </table>
@@ -149,7 +165,7 @@
                     <tr>
                         <td class="layout-col-left">
                             <div class="label">Event</div>
-                            <div class="value value-large">The Birthday Bash feat. MADA MADA</div>
+                            <div class="value value-large">The Birthday Bash feat. DJ LIL SOUND & DJ DEE-B</div>
 
                             <table style="width: 100%; margin-top: 20px;">
                                 <tr>
@@ -188,11 +204,14 @@
                                 <img src="data:image/svg+xml;base64,{{ $qr }}" width="130" height="130">
                             </div>
                             <div class="ticket-code">{{ $ticketCode }}</div>
+                            <div style="font-size: 9px; color: #71717a; margin-top: 8px;">Valid for one person</div>
                         </td>
                     </tr>
                 </table>
             </div>
-            <div class="footer">Galaxy Events Inc. - Digital Asset</div>
+            <div class="footer">
+                This document is a digital asset of Eventscye Inc. Keep it secure.
+            </div>
         </div>
     </div>
 </body>
